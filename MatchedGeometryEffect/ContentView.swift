@@ -39,9 +39,9 @@ struct FrameKey: PreferenceKey {
 }
 
 extension View {
-    func onFrameChange(_ f: @escaping (CGRect) -> ()) -> some View {
+    func onFrameChange(in cs: CoordinateSpace = .global, _ f: @escaping (CGRect) -> ()) -> some View {
         overlay(GeometryReader { proxy in
-            Color.clear.preference(key: FrameKey.self, value: proxy.frame(in: .global))
+            Color.clear.preference(key: FrameKey.self, value: proxy.frame(in: cs))
         }).onPreferenceChange(FrameKey.self, perform: {
             f($0!)
         })
@@ -128,6 +128,7 @@ struct Sample: View {
     var properties: MatchedGeometryProperties
     var anchor: UnitPoint
     @Namespace var ns
+    @Namespace var out
 
     var body: some View {
         HStack(spacing: 0) {
@@ -161,26 +162,59 @@ struct ApplyGeometryEffects: ViewModifier {
             .onPreferenceChange(GeometryEffectKey.self) {
                 database = $0
             }
-
     }
 }
 
 extension MatchedGeometryProperties: Hashable {}
 
+enum AnchorStop: Hashable, Identifiable, CaseIterable {
+    case center
+    case top, bottom, leading, trailing
+    case topLeading, topTrailing
+    case bottomLeading, bottomTrailing
+    
+    var id: Self { self }
+    
+    var anchor: UnitPoint {
+        switch self {
+            case .center: return .center
+            case .top:  return .top
+            case .bottom: return .bottom
+            case .leading: return .leading
+            case .trailing: return .trailing
+            case .topLeading: return .topLeading
+            case .topTrailing: return .topTrailing
+            case .bottomLeading: return .bottomLeading
+            case .bottomTrailing: return .bottomTrailing
+        }
+    }
+}
+
 struct ContentView: View {
     @State var properties: MatchedGeometryProperties = .frame
     @State var anchor: UnitPoint = .center
+    @State var stop: AnchorStop = .center
     
     var body: some View {
         VStack {
-            Picker("Properties", selection: $properties) {
-                Text("Position").tag(MatchedGeometryProperties.position)
-                Text("Size").tag(MatchedGeometryProperties.size)
-                Text("Frame").tag(MatchedGeometryProperties.frame)
-            }
+            HStack {
+                Picker("Properties", selection: $properties) {
+                    Text("Position").tag(MatchedGeometryProperties.position)
+                    Text("Size").tag(MatchedGeometryProperties.size)
+                    Text("Frame").tag(MatchedGeometryProperties.frame)
+                }
+                Picker("Unit Stops", selection: $stop) {
+                    ForEach(AnchorStop.allCases) {
+                        Text(verbatim: "\($0)").tag($0.id)
+                    }
+                }
+                .onChange(of: stop) {
+                    anchor = $0.anchor
+                }
+           }
             Slider(value: $anchor.x, in: 0...1, label: { Text("Anchor X")})
             Slider(value: $anchor.y, in: 0...1, label: { Text("Anchor Y")})
-            Sample(builtin: true, properties: properties, anchor: anchor)
+              Sample(builtin: true, properties: properties, anchor: anchor)
             Sample(builtin: false, properties: properties, anchor: anchor)
         }
         .modifier(ApplyGeometryEffects())
