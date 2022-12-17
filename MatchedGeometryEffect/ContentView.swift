@@ -12,7 +12,37 @@ struct GeometryKey: Hashable {
     var id: AnyHashable
 }
 
-typealias GeometryEffectDatabase = [GeometryKey: CGRect]
+@dynamicMemberLookup
+struct Frame: Equatable {
+    var rect: CGRect
+    var anchor: UnitPoint
+    
+    subscript<Value>(dynamicMember key: WritableKeyPath<CGRect,Value>) -> Value {
+        get { rect[keyPath: key] }
+        set { rect[keyPath: key] = newValue }
+    }
+    
+    var pin: CGPoint { rect.point(for: anchor) }
+}
+extension Frame {
+    static var zero: Frame { Frame(.zero) }
+    
+    init(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, anchor: UnitPoint = .center) {
+        self.init(origin: .init(x: x, y: y), size: .init(width: width, height: height))
+    }
+
+    init(origin: CGPoint, size: CGSize, anchor: UnitPoint = .center) {
+        rect = .init(origin: origin, size: size)
+        self.anchor = anchor
+    }
+    
+    init(_ rect: CGRect, anchor: UnitPoint = .center) {
+        self.rect = rect
+        self.anchor = anchor
+    }
+}
+
+typealias GeometryEffectDatabase = [GeometryKey: Frame]
 
 struct GeometryEffectKey: PreferenceKey, EnvironmentKey {
     static var defaultValue: GeometryEffectDatabase = [:]
@@ -32,19 +62,25 @@ extension EnvironmentValues {
 }
 
 struct FrameKey: PreferenceKey {
-    static var defaultValue: CGRect?
-    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
+    static var defaultValue: Frame?
+    static func reduce(value: inout Frame?, nextValue: () -> Frame?) {
         value = value ?? nextValue()
     }
 }
 
 extension View {
-    func onFrameChange(in cs: CoordinateSpace = .global, _ f: @escaping (CGRect) -> ()) -> some View {
+    func onFrameChange(in cs: CoordinateSpace = .global, _ f: @escaping (Frame) -> ()) -> some View {
         overlay(GeometryReader { proxy in
-            Color.clear.preference(key: FrameKey.self, value: proxy.frame(in: cs))
+            Color.clear.preference(key: FrameKey.self, value: Frame(proxy.frame(in: cs)))
         }).onPreferenceChange(FrameKey.self, perform: {
             f($0!)
         })
+
+//        overlay(GeometryReader { proxy in
+//            Color.clear.preference(key: FrameKey.self, value: proxy.frame(in: cs))
+//        }).onPreferenceChange(FrameKey.self, perform: {
+//            f($0!)
+//        })
     }
     
 //    func measureInitialFrame(in cs: CoordinateSpace = .global,
@@ -150,57 +186,53 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
         GeometryKey(namespace: namespace, id: id)
     }
     
-    var frame: CGRect? { database[key] }
+    var frame: Frame? { database[key] }
     
-    var size: CGSize? {
+    var _size: CGSize? {
         guard properties.contains(.size) else { return nil }
         guard let frame else { return nil }
         return frame.size
     }
     
-    var psize: CGSize? {
+    var size: CGSize? {
         guard properties.contains(.size) else { return nil }
-        guard let dest = frame?.size else { return nil }
-//        let dest = size
+        guard let target = frame?.size else { return nil }
         let src = originalFrame.size
-        return lerp(start: src, end: dest, t: progress)
-//        let dx = abs(originalFrame.width - size.width)
-//        let dx = abs (src.width - dest.width)
-//        let min_w = min(src.width, dest.width)
-//        let max_w = max(src.width, dest.width)
-//
-//        let d = lerp(start: src, end: dest, t: progress)
-//        if dest.width > 0 {
-//            print("src", src, "dest", dest, "lerp", d, "dx", dx, dx * progress)
-//        }
-//        var mid = size
-//        mid.width = max_w - (dx * progress)
-//
-//        return d
+        return lerp(start: src, end: target, t: progress)
      }
 
-//    @State var initialFrame: CGRect = .zero
-    @State var originalFrame: CGRect = .zero
+    @State var originalFrame: Frame = .zero
 
     var offset: CGSize {
-        guard let target = frame, properties.contains(.position) else {
-            return .zero
-        }
-        let targetP = target.point(for: anchor)
-        let originalP = originalFrame.point(for: anchor)
+        guard properties.contains(.position) else { return .zero }
+        guard let target = frame else { return .zero }
+        let targetP = target.pin // target.point(for: anchor)
+        let originalP = originalFrame.pin // originalFrame.point(for: anchor)
         let size = CGSize(width: targetP.x - originalP.x, height: targetP.y - originalP.y)
-//        if !isSource {
-//            print(#function, "\(Int(size.width)) x \(Int(size.height))")
-//        }
+        if !isSource {
+            print(#function, targetP, originalP, "ds", size)
+        }
         return size * progress
     }
+
+//    var _offset: CGSize {
+//        guard properties.contains(.position) else { return .zero }
+//        guard let target = frame else { return .zero }
+//        let targetP = target.pin // target.point(for: anchor)
+//        let originalP = originalFrame.point(for: anchor)
+//        let size = CGSize(width: targetP.x - originalP.x, height: targetP.y - originalP.y)
+////        if !isSource {
+////            print(#function, "\(Int(size.width)) x \(Int(size.height))")
+////        }
+//        return size * progress
+//    }
     
     func body(content: Content) -> some View {
         Group {
             if isSource {
                 content
                     .overlay(GeometryReader { proxy in
-                        let f = proxy.frame(in: .global)
+                        let f = Frame(proxy.frame(in: .global))
                         Color.clear.preference(key: GeometryEffectKey.self, value: [key: f])
                     })
             } else {
@@ -216,9 +248,10 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
 //                            .onFrameChange {
 //                                self.originalFrame.size = $0.size
 //                            }
-                            .frame(width: psize?.width, height: psize?.height, alignment: .topLeading)
+                            .frame(width: size?.width, height: size?.height)
+//                                   alignment: .topLeading)
 //                            .debug()
-                        , alignment: .topLeading
+                        //                        , alignment: .topLeading
                     )
             }
         }
@@ -346,10 +379,10 @@ struct ContentView: View {
                 Slider(value: $anchor.y, in: 0...1, label: { Text("Anchor Y")})
             }
             Divider()
-            Text("Builtin")
-            Sample(builtin: true, properties: properties, anchor: anchor, active: active, progress: progress)
-                .animation(.default, value: active)
-            Divider()
+//            Text("Builtin")
+//            Sample(builtin: true, properties: properties, anchor: anchor, active: active, progress: progress)
+//                .animation(.default, value: active)
+//            Divider()
             Text("Custom")
             Sample(builtin: false, properties: properties, anchor: anchor, active: active, progress: progress)
                 .animation(.default, value: active)
