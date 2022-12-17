@@ -46,31 +46,92 @@ extension View {
             f($0!)
         })
     }
+    
+//    func measureInitialFrame(in cs: CoordinateSpace = .global,
+//                             _ f: @escaping (CGRect) -> ()
+//    ) -> some View {
+//        overlay(GeometryReader { proxy in
+//            Color.clear
+//                .onAppear {
+//                    f(proxy.frame(in: cs))
+//                }
+//        })
+//    }
 }
 
-extension CGRect {
+extension CGRect: CustomStringConvertible {
+    public var description: String {
+        "[\(origin) \(size)]"
+    }
+
     func point(for anchor: UnitPoint) -> CGPoint {
         CGPoint(x: minX + anchor.x * width, y: minY + anchor.y * height)
     }
 }
 
 // jmj
-extension CGPoint {
-    static func *(lhs: CGPoint, scale: CGFloat) -> CGPoint {
-        CGPoint(x: lhs.x * scale, y: lhs.y * scale)
+extension View {
+    @ViewBuilder
+    func debug() -> some View {
+        self
+            .overlay(alignment: .center) {
+            GeometryReader { g in
+                Text(verbatim: "\(g.size)")
+            }
+        }
     }
 }
 
-extension CGSize {
+extension CGPoint: CustomStringConvertible {
+    public var description: String {
+        "\(Int(x)):\(Int(y))"
+    }
+
+    static func *(lhs: CGPoint, scale: CGFloat) -> CGPoint {
+        CGPoint(x: lhs.x * scale, y: lhs.y * scale)
+    }
+    
+    static func +(lhs: CGPoint, rhs: CGPoint) -> CGPoint {
+        CGPoint(x: lhs.x + rhs.x, y: lhs.y + rhs.y)
+    }
+
+    static func -(lhs: CGPoint, rhs: CGPoint) -> CGPoint {
+        CGPoint(x: lhs.x - rhs.x, y: lhs.y - rhs.y)
+    }
+
+}
+
+extension CGSize: CustomStringConvertible {
+    public var description: String {
+        "\(Int(width))x\(Int(height))"
+    }
+    
     static func *(lhs: Self, scale: CGFloat) -> Self {
         Self.init(width: lhs.width * scale, height: lhs.height * scale)
     }
+    
+    static func +(lhs: Self, rhs: Self) -> Self {
+        Self(width: lhs.width + rhs.width, height: lhs.height + rhs.height)
+    }
+    
+    static func -(lhs: Self, rhs: Self) -> Self {
+        Self(width: lhs.width - rhs.width, height: lhs.height - rhs.height)
+    }
+
 }
 
 extension CGRect {
     static func *(lhs: Self, scale: CGFloat) -> Self {
         Self.init(origin: lhs.origin * scale, size: lhs.size * scale)
     }
+}
+
+public func lerp(start: CGPoint, end: CGPoint, t: CGFloat) -> CGPoint {
+    return start + (end - start) * t
+}
+
+public func lerp(start: CGSize, end: CGSize, t: CGFloat) -> CGSize {
+    return start + (end - start) * t
 }
 
 // jmj end
@@ -90,13 +151,37 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
     }
     
     var frame: CGRect? { database[key] }
+    
     var size: CGSize? {
         guard properties.contains(.size) else { return nil }
-        return frame?.size
+        guard let frame else { return nil }
+        return frame.size
     }
     
+    var psize: CGSize? {
+        guard properties.contains(.size) else { return nil }
+        guard let dest = frame?.size else { return nil }
+//        let dest = size
+        let src = originalFrame.size
+        return lerp(start: src, end: dest, t: progress)
+//        let dx = abs(originalFrame.width - size.width)
+//        let dx = abs (src.width - dest.width)
+//        let min_w = min(src.width, dest.width)
+//        let max_w = max(src.width, dest.width)
+//
+//        let d = lerp(start: src, end: dest, t: progress)
+//        if dest.width > 0 {
+//            print("src", src, "dest", dest, "lerp", d, "dx", dx, dx * progress)
+//        }
+//        var mid = size
+//        mid.width = max_w - (dx * progress)
+//
+//        return d
+     }
+
+//    @State var initialFrame: CGRect = .zero
     @State var originalFrame: CGRect = .zero
-    
+
     var offset: CGSize {
         guard let target = frame, properties.contains(.position) else {
             return .zero
@@ -104,9 +189,9 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
         let targetP = target.point(for: anchor)
         let originalP = originalFrame.point(for: anchor)
         let size = CGSize(width: targetP.x - originalP.x, height: targetP.y - originalP.y)
-        if !isSource {
-            print(#function, "\(Int(size.width)) x \(Int(size.height))")
-        }
+//        if !isSource {
+//            print(#function, "\(Int(size.width)) x \(Int(size.height))")
+//        }
         return size * progress
     }
     
@@ -121,16 +206,18 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
             } else {
                 content
                     .onFrameChange {
-                        self.originalFrame.origin = $0.origin
+//                        self.originalFrame.origin = $0.origin
+                        self.originalFrame = $0
                     }
                     .hidden()
                     .overlay(
                         content
                             .offset(offset)
-                            .onFrameChange {
-                                self.originalFrame.size = $0.size
-                            }
-                            .frame(width: size?.width, height: size?.height, alignment: .topLeading)
+//                            .onFrameChange {
+//                                self.originalFrame.size = $0.size
+//                            }
+                            .frame(width: psize?.width, height: psize?.height, alignment: .topLeading)
+//                            .debug()
                         , alignment: .topLeading
                     )
             }
@@ -172,10 +259,12 @@ struct Sample: View {
                 .fill(Color.red)
                 .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: active ? ns : out, properties: properties, progress: progress, anchor: .center)
                 .frame(width: 100, height: 100)
+                .debug()
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color.green)
                 .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
                 .frame(height: 50)
+                .debug()
                 .border(Color.blue)
             Circle()
                 .fill(Color.blue)
