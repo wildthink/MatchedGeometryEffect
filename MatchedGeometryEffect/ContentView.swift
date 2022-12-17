@@ -22,8 +22,31 @@ struct Frame: Equatable {
         set { rect[keyPath: key] = newValue }
     }
     
+    var width: CGFloat {
+        get { rect.width }
+        mutating set { rect.size.width = newValue }
+    }
+    
+    var height: CGFloat {
+        get { rect.height }
+        mutating set { rect.size.height = newValue }
+    }
+
     var pin: CGPoint { rect.point(for: anchor) }
+    var offset: CGSize { .init(width: pin.x, height: pin.y) }
+
+    mutating func set(pin newValue: CGPoint) {
+        rect.origin.x = newValue.x + anchor.x * rect.width
+        rect.origin.y = newValue.y + anchor.x * rect.height
+    }
+    
+    mutating func move(pin newValue: CGSize) {
+        rect.origin.x = newValue.width + anchor.x * rect.width
+        rect.origin.y = newValue.height + anchor.x * rect.height
+    }
+
 }
+
 extension Frame {
     static var zero: Frame { Frame(.zero) }
     
@@ -69,30 +92,18 @@ struct FrameKey: PreferenceKey {
 }
 
 extension View {
-    func onFrameChange(in cs: CoordinateSpace = .global, _ f: @escaping (Frame) -> ()) -> some View {
+    func onFrameChange(
+        in cs: CoordinateSpace = .global,
+        anchor: UnitPoint,
+        _ f: @escaping (Frame) -> ()
+    ) -> some View {
         overlay(GeometryReader { proxy in
-            Color.clear.preference(key: FrameKey.self, value: Frame(proxy.frame(in: cs)))
+            Color.clear.preference(key: FrameKey.self,
+                                   value: Frame(proxy.frame(in: cs), anchor: anchor))
         }).onPreferenceChange(FrameKey.self, perform: {
             f($0!)
         })
-
-//        overlay(GeometryReader { proxy in
-//            Color.clear.preference(key: FrameKey.self, value: proxy.frame(in: cs))
-//        }).onPreferenceChange(FrameKey.self, perform: {
-//            f($0!)
-//        })
     }
-    
-//    func measureInitialFrame(in cs: CoordinateSpace = .global,
-//                             _ f: @escaping (CGRect) -> ()
-//    ) -> some View {
-//        overlay(GeometryReader { proxy in
-//            Color.clear
-//                .onAppear {
-//                    f(proxy.frame(in: cs))
-//                }
-//        })
-//    }
 }
 
 extension CGRect: CustomStringConvertible {
@@ -106,13 +117,38 @@ extension CGRect: CustomStringConvertible {
 }
 
 // jmj
+
+extension UnitPoint {
+    static func *(size: CGSize, scale: UnitPoint) -> CGSize {
+        .init(width: size.width * scale.x, height: size.height * scale.y)
+    }
+}
+
+extension View {
+    func position(_ size: CGSize) -> some View {
+        self.position(x: size.width, y: size.height)
+    }
+}
+
 extension View {
     @ViewBuilder
-    func debug() -> some View {
+    func debug(_ anchor: UnitPoint = .center, in f: Frame? = .zero) -> some View {
+        let f = f ?? .zero
         self
             .overlay(alignment: .center) {
             GeometryReader { g in
-                Text(verbatim: "\(g.size)")
+                ZStack {
+                    VStack {
+                        Text(verbatim: "\(g.size)")
+                        Text(verbatim: "\(g.frame(in: .global).origin)")
+                        Spacer()
+                    }
+                    Circle().fill(.blue)
+                        .frame(width: 10, height: 10)
+                        .position(g.size * f.anchor)
+                }
+                .frame(width: g.size.width, height: g.size.height)
+                .border(.cyan)
             }
         }
     }
@@ -162,8 +198,9 @@ extension CGRect {
     }
 }
 
-public func lerp(start: CGPoint, end: CGPoint, t: CGFloat) -> CGPoint {
-    return start + (end - start) * t
+public func lerp(start: CGPoint, end: CGPoint, t: CGFloat) -> CGSize {
+    let pt = start + (end - start) * t
+    return CGSize(width: pt.x, height: pt.y)
 }
 
 public func lerp(start: CGSize, end: CGSize, t: CGFloat) -> CGSize {
@@ -188,12 +225,19 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
     
     var frame: Frame? { database[key] }
     
-    var _size: CGSize? {
-        guard properties.contains(.size) else { return nil }
-        guard let frame else { return nil }
-        return frame.size
+    var pframe: Frame? {
+        guard var target = frame else { return nil }
+        let src = originalFrame
+
+        if properties.contains(.size) {
+            target.size = lerp(start: src.size, end: target.size, t: progress)
+        }
+        if properties.contains(.position) {
+            target.move(pin: lerp(start: src.pin, end: target.pin, t: progress))
+        }
+        return target
     }
-    
+
     var size: CGSize? {
         guard properties.contains(.size) else { return nil }
         guard let target = frame?.size else { return nil }
@@ -205,53 +249,36 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
 
     var offset: CGSize {
         guard properties.contains(.position) else { return .zero }
-        guard let target = frame else { return .zero }
-        let targetP = target.pin // target.point(for: anchor)
-        let originalP = originalFrame.pin // originalFrame.point(for: anchor)
-        let size = CGSize(width: targetP.x - originalP.x, height: targetP.y - originalP.y)
-        if !isSource {
-            print(#function, targetP, originalP, "ds", size)
-        }
-        return size * progress
+//        guard let target = frame?.pin else { return .zero }
+//        let src = originalFrame.pin
+//        return CGSize(width: target.x - src.x, height: target.y - src.y) * progress
+        
+        guard var target = frame else { return .zero }
+        let src = originalFrame
+//        target.rect.size = self.size ?? target.size
+        let pt = target.pin - src.pin
+        return CGSize(width: pt.x, height: pt.y) * progress
     }
-
-//    var _offset: CGSize {
-//        guard properties.contains(.position) else { return .zero }
-//        guard let target = frame else { return .zero }
-//        let targetP = target.pin // target.point(for: anchor)
-//        let originalP = originalFrame.point(for: anchor)
-//        let size = CGSize(width: targetP.x - originalP.x, height: targetP.y - originalP.y)
-////        if !isSource {
-////            print(#function, "\(Int(size.width)) x \(Int(size.height))")
-////        }
-//        return size * progress
-//    }
     
     func body(content: Content) -> some View {
         Group {
             if isSource {
                 content
                     .overlay(GeometryReader { proxy in
-                        let f = Frame(proxy.frame(in: .global))
+                        let f = Frame(proxy.frame(in: .global), anchor: anchor)
                         Color.clear.preference(key: GeometryEffectKey.self, value: [key: f])
                     })
             } else {
                 content
-                    .onFrameChange {
-//                        self.originalFrame.origin = $0.origin
+                    .onFrameChange(anchor: anchor) {
                         self.originalFrame = $0
                     }
                     .hidden()
                     .overlay(
                         content
-                            .offset(offset)
-//                            .onFrameChange {
-//                                self.originalFrame.size = $0.size
-//                            }
+                            .debug(anchor)
                             .frame(width: size?.width, height: size?.height)
-//                                   alignment: .topLeading)
-//                            .debug()
-                        //                        , alignment: .topLeading
+                            .offset(offset)
                     )
             }
         }
@@ -297,15 +324,15 @@ struct Sample: View {
                 .fill(Color.green)
                 .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
                 .frame(height: 50)
-                .debug()
+//                .debug(anchor)
                 .border(Color.blue)
-            Circle()
-                .fill(Color.blue)
-                .frame(width: 25, height: 25)
-                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
-            Text(builtin ? "Old world" : "New World")
-                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
-                .border(Color.red)
+//            Circle()
+//                .fill(Color.blue)
+//                .frame(width: 25, height: 25)
+//                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
+//            Text(builtin ? "Old world" : "New World")
+//                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
+//                .border(Color.red)
 
         }.frame(height: 100)
     }
