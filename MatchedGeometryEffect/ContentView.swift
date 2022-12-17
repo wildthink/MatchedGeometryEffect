@@ -54,12 +54,35 @@ extension CGRect {
     }
 }
 
+// jmj
+extension CGPoint {
+    static func *(lhs: CGPoint, scale: CGFloat) -> CGPoint {
+        CGPoint(x: lhs.x * scale, y: lhs.y * scale)
+    }
+}
+
+extension CGSize {
+    static func *(lhs: Self, scale: CGFloat) -> Self {
+        Self.init(width: lhs.width * scale, height: lhs.height * scale)
+    }
+}
+
+extension CGRect {
+    static func *(lhs: Self, scale: CGFloat) -> Self {
+        Self.init(origin: lhs.origin * scale, size: lhs.size * scale)
+    }
+}
+
+// jmj end
+
 struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
     var id: ID
     var namespace: Namespace.ID
     var properties: MatchedGeometryProperties
     var anchor: UnitPoint
     var isSource: Bool = true
+    var progress: CGFloat = 0.5
+    
     @Environment(\.geometryEffectDatabase) var database
     
     var key: GeometryKey {
@@ -80,7 +103,11 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
         }
         let targetP = target.point(for: anchor)
         let originalP = originalFrame.point(for: anchor)
-        return CGSize(width: targetP.x - originalP.x, height: targetP.y - originalP.y)
+        let size = CGSize(width: targetP.x - originalP.x, height: targetP.y - originalP.y)
+        if !isSource {
+            print(#function, "\(Int(size.width)) x \(Int(size.height))")
+        }
+        return size * progress
     }
     
     func body(content: Content) -> some View {
@@ -112,12 +139,19 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
 }
 
 extension View {
-    func myMatchedGeometryEffect<ID: Hashable>(useBuiltin: Bool = true, id: ID, in ns: Namespace.ID, properties: MatchedGeometryProperties = .frame, anchor: UnitPoint = .center, isSource: Bool = true) -> some View {
+    func myMatchedGeometryEffect<ID: Hashable>(
+        useBuiltin: Bool = true,
+        id: ID, in ns: Namespace.ID,
+        properties: MatchedGeometryProperties = .frame,
+        progress: CGFloat = 1.0,
+        anchor: UnitPoint = .center,
+        isSource: Bool = true
+    ) -> some View {
         Group {
             if useBuiltin {
                 self.matchedGeometryEffect(id: id, in: ns, properties: properties, anchor: anchor, isSource: isSource)
             } else {
-                modifier(MatchedGeometryEffect(id: id, namespace: ns, properties: properties, anchor: anchor, isSource: isSource))
+                modifier(MatchedGeometryEffect(id: id, namespace: ns, properties: properties, anchor: anchor, isSource: isSource, progress: progress))
             }
         }
     }
@@ -127,6 +161,8 @@ struct Sample: View {
     var builtin = true
     var properties: MatchedGeometryProperties
     var anchor: UnitPoint
+    var active = true
+    var progress: CGFloat = 1.0
     @Namespace var ns
     @Namespace var out
 
@@ -134,19 +170,19 @@ struct Sample: View {
         HStack(spacing: 0) {
             Rectangle()
                 .fill(Color.red)
-                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, anchor: .center)
+                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: active ? ns : out, properties: properties, progress: progress, anchor: .center)
                 .frame(width: 100, height: 100)
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color.green)
-                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, anchor: anchor, isSource: false)
+                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
                 .frame(height: 50)
                 .border(Color.blue)
             Circle()
                 .fill(Color.blue)
                 .frame(width: 25, height: 25)
-                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, anchor: anchor, isSource: false)
-            Text("Hello world")
-                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, anchor: anchor, isSource: false)
+                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
+            Text(builtin ? "Old world" : "New World")
+                .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
                 .border(Color.red)
 
         }.frame(height: 100)
@@ -194,7 +230,9 @@ struct ContentView: View {
     @State var properties: MatchedGeometryProperties = .frame
     @State var anchor: UnitPoint = .center
     @State var stop: AnchorStop = .center
-    
+    @State var active = true
+    @State var progress: CGFloat = 1
+
     var body: some View {
         VStack {
             HStack {
@@ -211,11 +249,21 @@ struct ContentView: View {
                 .onChange(of: stop) {
                     anchor = $0.anchor
                 }
-           }
-            Slider(value: $anchor.x, in: 0...1, label: { Text("Anchor X")})
-            Slider(value: $anchor.y, in: 0...1, label: { Text("Anchor Y")})
-              Sample(builtin: true, properties: properties, anchor: anchor)
-            Sample(builtin: false, properties: properties, anchor: anchor)
+            }
+            Group {
+                Toggle("Active", isOn: $active)
+                Slider(value: $progress, in: 0...1, label: { Text("Progress")})
+                Slider(value: $anchor.x, in: 0...1, label: { Text("Anchor X")})
+                Slider(value: $anchor.y, in: 0...1, label: { Text("Anchor Y")})
+            }
+            Divider()
+            Text("Builtin")
+            Sample(builtin: true, properties: properties, anchor: anchor, active: active, progress: progress)
+                .animation(.default, value: active)
+            Divider()
+            Text("Custom")
+            Sample(builtin: false, properties: properties, anchor: anchor, active: active, progress: progress)
+                .animation(.default, value: active)
         }
         .modifier(ApplyGeometryEffects())
         .padding(100)
