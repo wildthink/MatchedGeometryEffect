@@ -33,18 +33,6 @@ struct Frame: Equatable {
     }
 
     var pin: CGPoint { rect.point(for: anchor) }
-    var offset: CGSize { .init(width: pin.x, height: pin.y) }
-
-    mutating func set(pin newValue: CGPoint) {
-        rect.origin.x = newValue.x + anchor.x * rect.width
-        rect.origin.y = newValue.y + anchor.x * rect.height
-    }
-    
-    mutating func move(pin newValue: CGSize) {
-        rect.origin.x = newValue.width + anchor.x * rect.width
-        rect.origin.y = newValue.height + anchor.x * rect.height
-    }
-
 }
 
 extension Frame {
@@ -128,12 +116,20 @@ extension View {
     func position(_ size: CGSize) -> some View {
         self.position(x: size.width, y: size.height)
     }
+
+    @ViewBuilder
+    func size(_ size: CGSize?) -> some View {
+        if let size {
+            self.frame(width: size.width, height: size.height)
+        } else {
+            self
+        }
+    }
 }
 
 extension View {
     @ViewBuilder
     func debug(_ anchor: UnitPoint = .center, in f: Frame? = .zero) -> some View {
-        let f = f ?? .zero
         self
             .overlay(alignment: .center) {
             GeometryReader { g in
@@ -145,7 +141,7 @@ extension View {
                     }
                     Circle().fill(.blue)
                         .frame(width: 10, height: 10)
-                        .position(g.size * f.anchor)
+                        .position(g.size * anchor)
                 }
                 .frame(width: g.size.width, height: g.size.height)
                 .border(.cyan)
@@ -154,58 +150,6 @@ extension View {
     }
 }
 
-extension CGPoint: CustomStringConvertible {
-    public var description: String {
-        "\(Int(x)):\(Int(y))"
-    }
-
-    static func *(lhs: CGPoint, scale: CGFloat) -> CGPoint {
-        CGPoint(x: lhs.x * scale, y: lhs.y * scale)
-    }
-    
-    static func +(lhs: CGPoint, rhs: CGPoint) -> CGPoint {
-        CGPoint(x: lhs.x + rhs.x, y: lhs.y + rhs.y)
-    }
-
-    static func -(lhs: CGPoint, rhs: CGPoint) -> CGPoint {
-        CGPoint(x: lhs.x - rhs.x, y: lhs.y - rhs.y)
-    }
-
-}
-
-extension CGSize: CustomStringConvertible {
-    public var description: String {
-        "\(Int(width))x\(Int(height))"
-    }
-    
-    static func *(lhs: Self, scale: CGFloat) -> Self {
-        Self.init(width: lhs.width * scale, height: lhs.height * scale)
-    }
-    
-    static func +(lhs: Self, rhs: Self) -> Self {
-        Self(width: lhs.width + rhs.width, height: lhs.height + rhs.height)
-    }
-    
-    static func -(lhs: Self, rhs: Self) -> Self {
-        Self(width: lhs.width - rhs.width, height: lhs.height - rhs.height)
-    }
-
-}
-
-extension CGRect {
-    static func *(lhs: Self, scale: CGFloat) -> Self {
-        Self.init(origin: lhs.origin * scale, size: lhs.size * scale)
-    }
-}
-
-public func lerp(start: CGPoint, end: CGPoint, t: CGFloat) -> CGSize {
-    let pt = start + (end - start) * t
-    return CGSize(width: pt.x, height: pt.y)
-}
-
-public func lerp(start: CGSize, end: CGSize, t: CGFloat) -> CGSize {
-    return start + (end - start) * t
-}
 
 // jmj end
 
@@ -225,23 +169,13 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
     
     var frame: Frame? { database[key] }
     
-    var pframe: Frame? {
-        guard var target = frame else { return nil }
-        let src = originalFrame
-
-        if properties.contains(.size) {
-            target.size = lerp(start: src.size, end: target.size, t: progress)
-        }
-        if properties.contains(.position) {
-            target.move(pin: lerp(start: src.pin, end: target.pin, t: progress))
-        }
-        return target
-    }
-
     var size: CGSize? {
         guard properties.contains(.size) else { return nil }
         guard let target = frame?.size else { return nil }
         let src = originalFrame.size
+        if !self.isSource {
+            print(#function, src, target)
+        }
         return lerp(start: src, end: target, t: progress)
      }
 
@@ -249,15 +183,19 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
 
     var offset: CGSize {
         guard properties.contains(.position) else { return .zero }
-//        guard let target = frame?.pin else { return .zero }
-//        let src = originalFrame.pin
-//        return CGSize(width: target.x - src.x, height: target.y - src.y) * progress
-        
         guard var target = frame else { return .zero }
-        let src = originalFrame
-//        target.rect.size = self.size ?? target.size
-        let pt = target.pin - src.pin
-        return CGSize(width: pt.x, height: pt.y) * progress
+        var src = originalFrame
+        if let size = size {
+            target.size = size
+        }
+//        src.size = lerp(start: src.size, end: target.size, t: progress)
+//        target.size = lerp(start: target.size, end: src.size, t: progress)
+
+        let pt = (target.pin - src.pin) * progress
+        if !self.isSource {
+            print(#function, anchor.stop, src.pin, target.pin)
+        }
+        return CGSize(width: pt.x, height: pt.y) // * (progress)
     }
     
     func body(content: Content) -> some View {
@@ -274,13 +212,18 @@ struct MatchedGeometryEffect<ID: Hashable>: ViewModifier {
                         self.originalFrame = $0
                     }
                     .hidden()
-                    .overlay(
+                    .overlay {
+                        let sz = size
                         content
                             .debug(anchor)
-                            .frame(width: size?.width, height: size?.height)
+                            .frame(width: sz?.width, height: sz?.height)
                             .offset(offset)
-                    )
+                    }
             }
+        }
+        .onChange(of: originalFrame) {
+            guard originalFrame != $0 else { return }
+            print("originalFrame", $0)
         }
     }
 }
@@ -323,7 +266,7 @@ struct Sample: View {
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color.green)
                 .myMatchedGeometryEffect(useBuiltin: builtin, id: "ID", in: ns, properties: properties, progress: progress, anchor: anchor, isSource: false)
-                .frame(height: 50)
+                .frame(width: 150, height: 70)
 //                .debug(anchor)
                 .border(Color.blue)
 //            Circle()
@@ -353,7 +296,7 @@ struct ApplyGeometryEffects: ViewModifier {
 extension MatchedGeometryProperties: Hashable {}
 
 enum AnchorStop: Hashable, Identifiable, CaseIterable {
-    case center
+    case zero, center
     case top, bottom, leading, trailing
     case topLeading, topTrailing
     case bottomLeading, bottomTrailing
@@ -362,6 +305,7 @@ enum AnchorStop: Hashable, Identifiable, CaseIterable {
     
     var anchor: UnitPoint {
         switch self {
+            case .zero: return .zero
             case .center: return .center
             case .top:  return .top
             case .bottom: return .bottom
@@ -372,6 +316,12 @@ enum AnchorStop: Hashable, Identifiable, CaseIterable {
             case .bottomLeading: return .bottomLeading
             case .bottomTrailing: return .bottomTrailing
         }
+    }
+}
+
+extension UnitPoint {
+    var stop: AnchorStop {
+        AnchorStop.allCases.first { self == $0.anchor } ?? .zero
     }
 }
 

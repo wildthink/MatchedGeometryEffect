@@ -11,6 +11,7 @@
 		83E2A1AB265CFD76004943CE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E2A1AA265CFD76004943CE /* ContentView.swift */; };
 		83E2A1AD265CFD77004943CE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 83E2A1AC265CFD77004943CE /* Assets.xcassets */; };
 		83E2A1B0265CFD77004943CE /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 83E2A1AF265CFD77004943CE /* Preview Assets.xcassets */; };
+		9603E7EA294EB7A100F8385F /* Geomtry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9603E7E9294EB7A100F8385F /* Geomtry.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		83E2A1AF265CFD77004943CE /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		83E2A1B1265CFD77004943CE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		83E2A1B2265CFD77004943CE /* MatchedGeometryEffect.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MatchedGeometryEffect.entitlements; sourceTree = "<group>"; };
+		9603E7E9294EB7A100F8385F /* Geomtry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Geomtry.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -55,6 +57,7 @@
 			children = (
 				83E2A1A8265CFD76004943CE /* MatchedGeometryEffectApp.swift */,
 				83E2A1AA265CFD76004943CE /* ContentView.swift */,
+				9603E7E9294EB7A100F8385F /* Geomtry.swift */,
 				83E2A1AC265CFD77004943CE /* Assets.xcassets */,
 				83E2A1B1265CFD77004943CE /* Info.plist */,
 				83E2A1B2265CFD77004943CE /* MatchedGeometryEffect.entitlements */,
@@ -140,6 +143,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9603E7EA294EB7A100F8385F /* Geomtry.swift in Sources */,
 				83E2A1AB265CFD76004943CE /* ContentView.swift in Sources */,
 				83E2A1A9265CFD76004943CE /* MatchedGeometryEffectApp.swift in Sources */,
 			);
